@@ -1,0 +1,7 @@
+[package]
+name = "configtf"
+version = "0.1.0"
+authors = ["George Pittarelli <g@gjp.cc>"]
+
+[dependencies]
+iron = "0.4.*"
