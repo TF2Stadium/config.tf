@@ -1,7 +1,8 @@
 [package]
 name = "configtf"
 version = "0.1.0"
-authors = ["George Pittarelli <g@gjp.cc>"]
+authors = ["gpittarelli <tf2stadium@gjp.cc>"]
+license = "GPL-3.0"
 
 [dependencies]
 iron = "0.4.*"
