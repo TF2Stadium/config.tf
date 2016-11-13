@@ -10,7 +10,5 @@ we can include client configs as well.
 
 ## License
 
-## License
-
 Source code released under the
 [GPLv3 License (GPLv3)](https://github.com/TF2Stadium/config.tf/blob/master/LICENSE).
