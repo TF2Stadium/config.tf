@@ -6,3 +6,4 @@ license = "GPL-3.0"
 
 [dependencies]
 iron = "0.4.*"
+router = "*"
