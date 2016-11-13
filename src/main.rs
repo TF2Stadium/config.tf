@@ -1,11 +1,14 @@
 extern crate iron;
 extern crate router;
+extern crate dotenv;
 
 use std::io::prelude::*;
 use std::fs::File;
+use std::env;
 use iron::prelude::*;
 use iron::status;
 use router::Router;
+use dotenv::dotenv;
 
 static INDEX: &'static [u8] = include_bytes!("index.html");
 fn index_handler(_: &mut Request) -> IronResult<Response> {
@@ -28,12 +31,15 @@ fn handler(req: &mut Request) -> IronResult<Response> {
 }
 
 fn main() {
+    dotenv().ok();
+
     let mut router = Router::new();
     router.get("/", index_handler, "index");
     router.get("/:config", handler, "config");
 
-    let _server = Iron::new(router).http("localhost:3000").unwrap();
-    println!("Listening on port 3000");
+    let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
+    let _server = Iron::new(router).http(("localhost", port)).unwrap();
+    println!("Listening on port {}", port);
 }
 
 // Local Variables:
