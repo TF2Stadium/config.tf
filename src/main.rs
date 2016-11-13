@@ -11,3 +11,7 @@ fn main() {
     let _server = Iron::new(hello_world).http("localhost:3000").unwrap();
     println!("On 3000");
 }
+
+// Local Variables:
+// flycheck-rust-crate-type: "bin"
+// End:
