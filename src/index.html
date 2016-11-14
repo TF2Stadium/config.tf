@@ -3,8 +3,40 @@
   <head>
     <meta charset="UTF-8"/>
     <title>config.tf</title>
+    <style type="text/css">
+      * {
+        margin: 0;
+        padding: 0;
+        font-family: Helvetica, "Fira Sans Regular", Arial, sans-serif;
+        line-height: 1.3em;
+      }
+
+      h1, h2, form, p {
+        margin: 1em 0 1em 20px;
+      }
+
+      form * {
+        margin: 0.6em 0;
+      }
+
+      body {
+        max-width: 600px;
+      }
+    </style>
   </head>
   <body>
-    Hello World!
+    <h1>config.tf</h1>
+    <p>A TF2 server config sharing service. Not many features yet--for
+      now just serves user-uploaded configs.</p>
+    <h2>Upload a config</h2>
+    <form method="POST" action="/cfg" enctype="multipart/form-data">
+      <label for="name">Name: </label>
+      <input type="text" maxlength="32" name="name">
+      <br>
+      <label for="file">File: </label>
+      <input type="file" name="file">
+      <br>
+      <input type="submit" value="Upload">
+    </form>
   </body>
 </html>
