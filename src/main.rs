@@ -1,4 +1,6 @@
+#![feature(custom_derive)]
 #[macro_use(itry)]
+#[macro_use(iexpect)]
 extern crate iron;
 extern crate hyper;
 extern crate multipart;
@@ -8,6 +10,8 @@ extern crate tempdir;
 extern crate regex;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate serde_json;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -26,6 +30,10 @@ use router::Router;
 use dotenv::dotenv;
 use regex::Regex;
 
+mod config;
+use config::Config;
+mod upload;
+
 static INDEX: &'static [u8] = include_bytes!("index.html");
 fn index_handler(_: &mut Request) -> IronResult<Response> {
     let mut response = Response::with((status::Ok, INDEX));
@@ -41,6 +49,7 @@ lazy_static! {
         r#"^([a-zA-Z0-9_]+(\s+("[a-zA-Z0-9_]+"|[a-zA-Z0-9_]+))?|#[\s[:word][:punct]]*)?$"#
     ).unwrap();
 }
+
 fn validate_config_at(p: &Path) -> io::Result<bool> {
     match File::open(p) {
         Ok(f) => {
