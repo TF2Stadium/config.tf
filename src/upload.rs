@@ -73,3 +73,7 @@ pub fn upload_handler(req: &mut Request) -> IronResult<Response> {
     
     Ok(Response::with((status::Ok, "Upload complete")))
 }
+
+// Local Variables:
+// flycheck-rust-crate-type: "bin"
+// End:

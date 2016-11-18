@@ -1,4 +1,4 @@
-#![feature(custom_derive)]
+#![feature(custom_derive, proc_macro)]
 #[macro_use(itry)]
 #[macro_use(iexpect)]
 extern crate iron;
@@ -9,9 +9,14 @@ extern crate dotenv;
 extern crate tempdir;
 extern crate regex;
 #[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate diesel_codegen;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
+extern crate chrono;
 
 use std::io::prelude::*;
 use std::fs::File;
@@ -29,10 +34,20 @@ use iron::status;
 use router::Router;
 use dotenv::dotenv;
 use regex::Regex;
+use diesel::prelude::*;
+use diesel::pg::PgConnection;
 
+mod schema;
 mod config;
 use config::Config;
 mod upload;
+
+pub fn establish_connection() -> PgConnection {
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+    PgConnection::establish(&database_url)
+        .expect(&format!("Error connecting to {}", database_url))
+}
 
 static INDEX: &'static [u8] = include_bytes!("index.html");
 fn index_handler(_: &mut Request) -> IronResult<Response> {
@@ -153,6 +168,7 @@ fn handler(req: &mut Request) -> IronResult<Response> {
 
 fn main() {
     dotenv().ok();
+    establish_connection();
 
     let mut router = Router::new();
     router.get("/", index_handler, "index");
