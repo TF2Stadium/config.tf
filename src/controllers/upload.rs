@@ -1,12 +1,13 @@
 use iron::prelude::*;
 use iron::status;
-use multipart::server::{Multipart, MultipartFile, MultipartData};
+use multipart::server::Multipart;
 use regex::Regex;
-use std::io::{Read, BufRead};
-use std::path::PathBuf;
-    
+use std::io::prelude::*;
+use models;
+use conn::*;
+use super::chrono::UTC;
+
 lazy_static! {
-    static ref VALID_FILE: Regex = Regex::new("[0-9a-zA-Z]+").unwrap();
     static ref VALID_LINE: Regex = Regex::new(
         r#"^([a-zA-Z0-9_]+(\s+("[a-zA-Z0-9_]+"|[a-zA-Z0-9_]+))?|#[\s[:word][:punct]]*)?$"#
     ).unwrap();
@@ -26,7 +27,7 @@ pub fn upload_handler(req: &mut Request) -> IronResult<Response> {
             Ok(Some(mut field)) => {
                 if field.name == "name" && name.is_none() {
                     name = match field.data.as_text() {
-                        Some(s) if VALID_FILE.is_match(s) => Some(s.into()),
+                        Some(s) => Some(s.into()),
                         _ => return Ok(Response::with((status::BadRequest, "Invalid file name")))
                     };
                 } else if field.name == "file" {
@@ -52,9 +53,6 @@ pub fn upload_handler(req: &mut Request) -> IronResult<Response> {
                             _ => {return Ok(Response::with((status::BadRequest, "Error while reading config")))}
                         }        
                     }
-                    let mut path = String::from("./configs/");
-                    path.push_str(name.as_ref().unwrap().as_str());
-                    file.save_as(PathBuf::from(path.as_str()));
                 }
             },
             Ok(None) => break,
@@ -68,12 +66,12 @@ pub fn upload_handler(req: &mut Request) -> IronResult<Response> {
     if config.is_none() {
         return Ok(Response::with((status::BadRequest, "Missing config file")))
     }
-
     
-    
+    models::config::NewConfig{
+        name: &name.as_ref().unwrap(),
+        config_type: models::config::SERVER_CONFIG,
+        created_at: UTC::now(),
+        user_id: 0,
+    }.save(&config.unwrap(), &establish_connection());
     Ok(Response::with((status::Ok, "Upload complete")))
 }
-
-// Local Variables:
-// flycheck-rust-crate-type: "bin"
-// End:
