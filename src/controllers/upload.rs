@@ -71,7 +71,6 @@ pub fn upload_handler(req: &mut Request) -> IronResult<Response> {
         name: &name.as_ref().unwrap(),
         config_type: models::config::SERVER_CONFIG,
         created_at: UTC::now(),
-        user_id: 0,
     }.save(&config.unwrap(), &establish_connection());
     Ok(Response::with((status::Ok, "Upload complete")))
 }

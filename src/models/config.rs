@@ -9,19 +9,39 @@ use std::io::prelude::*;
 pub const SERVER_CONFIG: i16 = 0;
 pub const CLIENT_CONFIG: i16 = 1;
 
+fn make_path(id: i32) -> String {
+    let mut path = String::from("./configs/");
+    //path.push_str(&config.id.to_string());
+    path + &id.to_string() + ".cfg"
+}
+
 #[derive(Serialize, Deserialize, Queryable)]
 pub struct Config {
     pub id: i32,
     pub name: String,
     pub created_at: DateTime<UTC>, 
     pub config_type: i16,
-    pub user_id: i64,
 }
 
-pub fn get_all_configs(conn: &PgConnection) -> Option<Vec<Config>> {
+pub fn get_all_configs(conn: &PgConnection) -> Vec<Config> {
     use super::schema::configs::dsl::*;
 
-    configs.load::<Config>(conn).ok()
+    configs.load::<Config>(conn).unwrap()
+}
+
+pub fn get_config(config_id: i32, conn: &PgConnection) -> Option<String> {
+    use super::schema::configs::dsl::*;
+
+    match configs.filter(id.eq(config_id)).first::<Config>(conn) {
+        Ok(_) => {
+            let mut file = File::open(make_path(config_id))
+                .expect("Error opening config");
+            let mut config = String::new();
+            file.read_to_string(&mut config);
+            Some(config)
+        },
+        _ => None
+    }
 }
 
 use super::schema::configs;
@@ -31,7 +51,6 @@ pub struct NewConfig<'a> {
     pub name: &'a str,
     pub created_at: DateTime<UTC>,
     pub config_type: i16,
-    pub user_id: i64
 }
 
 impl<'a> NewConfig<'a> {
