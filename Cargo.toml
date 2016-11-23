@@ -12,6 +12,7 @@ dotenv = "0.8.*"
 tempdir = "0.3"
 regex = "0.1"
 lazy_static = "0.1.*"
+sha1 = "0.2.0"
 
 [dependencies.multipart]
 version  = "0.9.0-alpha.2"

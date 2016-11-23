@@ -6,6 +6,7 @@ extern crate router;
 extern crate dotenv;
 extern crate tempdir;
 extern crate regex;
+extern crate sha1;
 #[macro_use]
 extern crate lazy_static;
 
@@ -25,6 +26,33 @@ use iron::status;
 use router::Router;
 use dotenv::dotenv;
 use regex::Regex;
+use sha1::Sha1;
+
+fn sha1(s: &[u8]) -> String {
+    let mut digest = Sha1::new();
+    digest.update(s);
+    return digest.digest().to_string();
+}
+
+fn ensure_ends_with(suffix: &str, s: String) -> String {
+    if !s.ends_with(suffix) {
+        s + suffix
+    } else {
+        s
+    }
+}
+
+fn config_name_to_file_name(s: String) -> String { format!("./configs/{}", sha1(ensure_ends_with(".cfg", s).as_bytes())) }
+
+lazy_static! {
+    static ref VALID_LINE: Regex = Regex::new(
+        r#"^([a-zA-Z0-9_]+(\s+("[a-zA-Z\.0-9_]+"|[a-zA-Z\.0-9_]+))?|#[\s[:word][:punct]]*)?$"#
+    ).unwrap();
+
+    static ref VALID_NAME: Regex = Regex::new(
+        r#"^[a-zA-Z0-9-_]+(\.cfg)?$"#
+    ).unwrap();
+}
 
 static INDEX: &'static [u8] = include_bytes!("index.html");
 fn index_handler(_: &mut Request) -> IronResult<Response> {
@@ -36,11 +64,6 @@ fn index_handler(_: &mut Request) -> IronResult<Response> {
     Ok(response)
 }
 
-lazy_static! {
-    static ref VALID_LINE: Regex = Regex::new(
-        r#"^([a-zA-Z0-9_]+(\s+("[a-zA-Z0-9_]+"|[a-zA-Z0-9_]+))?|#[\s[:word][:punct]]*)?$"#
-    ).unwrap();
-}
 fn validate_config_at(p: &Path) -> io::Result<bool> {
     match File::open(p) {
         Ok(f) => {
@@ -74,7 +97,7 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
             }) {
                 Ok(_) => {
                     if name.is_some() && file.is_some() {
-                        let mut given_name = name.unwrap();
+                        let given_name = name.unwrap();
                         let save_status = file.unwrap();
                         if save_status.is_err() {
                             println!("error saving {}", save_status.unwrap_err());
@@ -82,10 +105,11 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
                         }
                         let saved = save_status.unwrap();
 
-                        if !given_name.ends_with(".cfg") {
-                            given_name.push_str(".cfg");
+                        if !VALID_NAME.is_match(given_name.as_str()) {
+                            return Ok(Response::with((status::BadRequest, "Invalid config name, can only include: a-z, A-Z, 0-9, -, _ (and may end with .cfg)")));
                         }
-                        let dest_path = format!("./configs/{}", given_name);
+
+                        let dest_path = config_name_to_file_name(given_name);
                         if Path::new(&dest_path).exists() {
                             return Ok(Response::with((status::BadRequest, "Config with that name already exists")));
                         }
@@ -95,7 +119,8 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
                             Ok(is_valid) => {
                                 if is_valid {
                                     // Instead of a rename, copy then delete the old one (because the uploaded file
-                                    // as saved to a tmp dir, which is often on a different filesystem)
+                                    // is saved to a tmp dir, which is often on a different filesystem, so rename
+                                    // doesn't work)
                                     match fs::copy(&saved.path, dest_path) {
                                         Ok(_) => {
                                             let _ = fs::remove_file(&saved.path);
@@ -128,17 +153,20 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
 }
 
 fn handler(req: &mut Request) -> IronResult<Response> {
-    let ref config = req.extensions.get::<Router>().unwrap().find("config").unwrap();
+    let config = req.extensions.get::<Router>().unwrap().find("config").unwrap();
 
-    match File::open("./configs/".to_string() + config) {
-        Ok(ref mut f) => {
-            let mut contents = String::new();
-            match f.read_to_string(&mut contents) {
-                Ok(_) => Ok(Response::with((status::Ok, contents))),
-                Err(_) => Ok(Response::with((status::Ok, contents))),
-            }
-        },
-        Err(_) => Ok(Response::with((status::NotFound, "Not Found"))),
+    if !VALID_NAME.is_match(config) {
+        return Ok(Response::with((status::BadRequest, "Invalid config name")));
+    }
+
+    if let Ok(ref mut f) = File::open(config_name_to_file_name(config.to_string())) {
+        let mut contents = String::new();
+        match f.read_to_string(&mut contents) {
+            Ok(_) => Ok(Response::with((status::Ok, contents))),
+            Err(_) => Ok(Response::with((status::Ok, contents))),
+        }
+    } else {
+        Ok(Response::with((status::NotFound, "Not Found")))
     }
 }
 
@@ -148,7 +176,7 @@ fn main() {
     let mut router = Router::new();
     router.get("/", index_handler, "index");
     router.post("/cfg", upload_handler, "upload");
-    router.get("/cfg/:config", handler, "config");
+    router.get("/cfg/*config", handler, "config");
 
     let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
     let _server = Iron::new(router).http(("0.0.0.0", port)).unwrap();
