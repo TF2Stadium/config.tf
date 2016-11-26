@@ -157,7 +157,7 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
     }
 }
 
-fn handler(req: &mut Request) -> IronResult<Response> {
+fn config_handler(req: &mut Request) -> IronResult<Response> {
     let config = req.extensions.get::<Router>().unwrap().find("config").unwrap();
 
     if !VALID_NAME.is_match(config) {
@@ -181,7 +181,7 @@ fn main() {
     let mut router = Router::new();
     router.get("/", index_handler, "index");
     router.post("/cfg", upload_handler, "upload");
-    router.get("/cfg/*config", handler, "config");
+    router.get("/cfg/*config", config_handler, "config");
 
     let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
     let _server = Iron::new(router).http(("0.0.0.0", port)).unwrap();
