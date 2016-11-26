@@ -64,19 +64,25 @@ fn index_handler(_: &mut Request) -> IronResult<Response> {
     Ok(response)
 }
 
-fn validate_config_at(p: &Path) -> io::Result<bool> {
+enum ValidateConfigError {
+    Io(io::Error),
+    Validation(String),
+}
+fn validate_config_at(p: &Path) -> Result<(), ValidateConfigError> {
     match File::open(p) {
         Ok(f) => {
             for l in BufReader::new(&f).lines() {
                 let line = l.unwrap();
-                if line.len() > 128 || !VALID_LINE.is_match(line.as_str()) {
-                    println!("bad line \"{}\"", line);
-                    return Ok(false);
+                if line.len() > 128 {
+                    return Err(ValidateConfigError::Validation(format!("line too long: \"{}\"", line)));
                 }
-            };
-            Ok(true)
+                if !VALID_LINE.is_match(line.as_str()) {
+                    return Err(ValidateConfigError::Validation(format!("invalid line: \"{}\"", line)));
+                }
+            }
+            Ok(())
         },
-        Err(e) => Err(e)
+        Err(e) => Err(ValidateConfigError::Io(e))
     }
 }
 
@@ -116,26 +122,25 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
 
                         // TODO: Could do all this reading without the temp file
                         match validate_config_at(&saved.path) {
-                            Ok(is_valid) => {
-                                if is_valid {
-                                    // Instead of a rename, copy then delete the old one (because the uploaded file
-                                    // is saved to a tmp dir, which is often on a different filesystem, so rename
-                                    // doesn't work)
-                                    match fs::copy(&saved.path, dest_path) {
-                                        Ok(_) => {
-                                            let _ = fs::remove_file(&saved.path);
-                                            Ok(Response::with((status::Ok, "Upload complete")))
-                                        },
-                                        Err(_) => {
-                                            Ok(Response::with((status::InternalServerError, "Error publishing")))
-                                        }
+                            Ok(()) => {
+                                // Instead of a rename, copy then delete the old one (because the uploaded file
+                                // is saved to a tmp dir, which is often on a different filesystem, so rename
+                                // doesn't work)
+                                match fs::copy(&saved.path, dest_path) {
+                                    Ok(_) => {
+                                        let _ = fs::remove_file(&saved.path);
+                                        Ok(Response::with((status::Ok, "Upload complete")))
+                                    },
+                                    Err(_) => {
+                                        Ok(Response::with((status::InternalServerError, "Error publishing")))
                                     }
-
-                                } else {
-                                    Ok(Response::with((status::BadRequest, "Invalid config file")))
                                 }
+
                             },
-                            Err(_) => {
+                            Err(ValidateConfigError::Validation(reason)) =>
+                                Ok(Response::with((status::BadRequest,
+                                                   format!("Invalid config file\n{}", reason)))),
+                            Err(ValidateConfigError::Io(_)) => {
                                 Ok(Response::with((status::InternalServerError, "Error uploading")))
                             }
                         }
