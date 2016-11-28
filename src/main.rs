@@ -13,6 +13,7 @@ extern crate lazy_static;
 
 use std::io::prelude::*;
 use std::fs::File;
+use std::sync::{Arc, Mutex};
 use std::fs;
 use std::path::{Path};
 use std::io::{BufReader};
@@ -23,7 +24,7 @@ use hyper::header::{ContentType};
 use hyper::mime::{Mime, TopLevel, SubLevel, Attr, Value};
 use multipart::server::{Multipart, SavedFile};
 use iron::prelude::*;
-use iron::status;
+use iron::{status, BeforeMiddleware, typemap, TypeMap};
 use router::Router;
 use dotenv::dotenv;
 use regex::Regex;
@@ -91,6 +92,11 @@ fn validate_config_at(p: &Path) -> Result<(), ValidateConfigError> {
 fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
     let upload_dir = TempDir::new("configtf-upload").unwrap();
 
+    // pull the extensions out of the request object before handing it
+    // over to multipart's ownership (multipart only exposes the
+    // request's _body_ back to us...)
+    let extensions = std::mem::replace(&mut req.extensions, TypeMap::new());
+
     let mut multipart = match Multipart::from_request(req) {
         Ok(multipart) => multipart,
         Err(_) => return Ok(Response::with((status::BadRequest, "The request is not multipart"))),
@@ -127,7 +133,7 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
         return Ok(Response::with((status::BadRequest, "Invalid config name, can only include: a-z, A-Z, 0-9, -, _ (and may end with .cfg)")));
     }
 
-    let dest_path = config_name_to_file_name(given_name);
+    let dest_path = config_name_to_file_name(given_name.clone());
     if Path::new(&dest_path).exists() {
         return Ok(Response::with((status::BadRequest, "Config with that name already exists")));
     }
@@ -138,6 +144,9 @@ fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
             // Instead of a rename, copy then delete the old one (because the uploaded file
             // is saved to a tmp dir, which is often on a different filesystem, so rename
             // doesn't work)
+            let db_mutex = extensions.get::<DbConn>().unwrap();
+            let conn = db_mutex.lock().unwrap();
+            conn.execute("INSERT INTO config VALUES (?)", &[&given_name]).unwrap();
             match fs::copy(&saved.path, dest_path) {
                 Ok(_) => {
                     let _ = fs::remove_file(&saved.path);
@@ -209,6 +218,17 @@ fn setup_db(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+struct DbConn { conn: Arc<Mutex<Connection>>, }
+
+impl typemap::Key for DbConn { type Value = Arc<Mutex<Connection>>; }
+
+impl BeforeMiddleware for DbConn {
+    fn before(&self, req: &mut Request) -> IronResult<()> {
+        req.extensions.insert::<DbConn>(self.conn.clone());
+        Ok(())
+    }
+}
+
 fn main() {
     dotenv().ok();
     let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
@@ -222,7 +242,10 @@ fn main() {
     router.post("/cfg", upload_handler, "upload");
     router.get("/cfg/*config", config_handler, "config");
 
-    let _server = Iron::new(router).http(("0.0.0.0", port)).unwrap();
+    let mut chain = Chain::new(router);
+    chain.link_before(DbConn {conn: Arc::new(Mutex::new(conn))});
+
+    let _server = Iron::new(chain).http(("0.0.0.0", port)).unwrap();
     println!("Listening on port {}", port);
 }
 
