@@ -90,71 +90,70 @@ fn validate_config_at(p: &Path) -> Result<(), ValidateConfigError> {
 
 fn upload_handler(req: &mut iron::Request) -> IronResult<Response> {
     let upload_dir = TempDir::new("configtf-upload").unwrap();
-    match Multipart::from_request(req) {
-        Ok(mut multipart) => {
-            let mut name: Option<String> = None;
-            let mut file: Option<io::Result<SavedFile>> = None;
-            match multipart.foreach_entry(|mut field| {
-                if field.name == "name" && name.is_none() {
-                    name = Some(field.data.as_text().unwrap_or("").to_string());
-                } else if field.name == "file" && file.is_none() {
-                    file = Some(
-                        field.data.as_file().unwrap().save_in_limited(upload_dir.path(), 30000)
-                    );
-                }
-            }) {
-                Ok(_) => {
-                    if name.is_some() && file.is_some() {
-                        let given_name = name.unwrap();
-                        let save_status = file.unwrap();
-                        if save_status.is_err() {
-                            println!("error saving {}", save_status.unwrap_err());
-                            return Ok(Response::with((status::InternalServerError, "Error uploading")));
-                        }
-                        let saved = save_status.unwrap();
 
-                        if !VALID_NAME.is_match(given_name.as_str()) {
-                            return Ok(Response::with((status::BadRequest, "Invalid config name, can only include: a-z, A-Z, 0-9, -, _ (and may end with .cfg)")));
-                        }
+    let mut multipart = match Multipart::from_request(req) {
+        Ok(multipart) => multipart,
+        Err(_) => return Ok(Response::with((status::BadRequest, "The request is not multipart"))),
+    };
 
-                        let dest_path = config_name_to_file_name(given_name);
-                        if Path::new(&dest_path).exists() {
-                            return Ok(Response::with((status::BadRequest, "Config with that name already exists")));
-                        }
-
-                        // TODO: Could do all this reading without the temp file
-                        match validate_config_at(&saved.path) {
-                            Ok(()) => {
-                                // Instead of a rename, copy then delete the old one (because the uploaded file
-                                // is saved to a tmp dir, which is often on a different filesystem, so rename
-                                // doesn't work)
-                                match fs::copy(&saved.path, dest_path) {
-                                    Ok(_) => {
-                                        let _ = fs::remove_file(&saved.path);
-                                        Ok(Response::with((status::Ok, "Upload complete")))
-                                    },
-                                    Err(_) => {
-                                        Ok(Response::with((status::InternalServerError, "Error publishing")))
-                                    }
-                                }
-
-                            },
-                            Err(ValidateConfigError::Validation(reason)) =>
-                                Ok(Response::with((status::BadRequest,
-                                                   format!("Invalid config file\n{}", reason)))),
-                            Err(ValidateConfigError::Io(_)) => {
-                                Ok(Response::with((status::InternalServerError, "Error uploading")))
-                            }
-                        }
-                    } else {
-                        Ok(Response::with((status::BadRequest, "Name and file required")))
-                    }
-                },
-                Err(_) => Ok(Response::with((status::BadRequest, "Error uploading")))
-            }
+    let mut name: Option<String> = None;
+    let mut file: Option<io::Result<SavedFile>> = None;
+    match multipart.foreach_entry(|mut field| {
+        if field.name == "name" && name.is_none() {
+            name = Some(field.data.as_text().unwrap_or("").to_string());
+        } else if field.name == "file" && file.is_none() {
+            file = Some(
+                field.data.as_file().unwrap().save_in_limited(upload_dir.path(), 30000)
+            );
         }
-        Err(_) => {
-            Ok(Response::with((status::BadRequest, "The request is not multipart")))
+    }) {
+        Ok(_) => (),
+        Err(_) => return Ok(Response::with((status::BadRequest, "Error uploading"))),
+    }
+
+    if !name.is_some() || !file.is_some() {
+        return Ok(Response::with((status::BadRequest, "Name and file required")));
+    }
+
+    let given_name = name.unwrap();
+    let save_status = file.unwrap();
+    if save_status.is_err() {
+        println!("error saving {}", save_status.unwrap_err());
+        return Ok(Response::with((status::InternalServerError, "Error uploading")));
+    }
+    let saved = save_status.unwrap();
+
+    if !VALID_NAME.is_match(given_name.as_str()) {
+        return Ok(Response::with((status::BadRequest, "Invalid config name, can only include: a-z, A-Z, 0-9, -, _ (and may end with .cfg)")));
+    }
+
+    let dest_path = config_name_to_file_name(given_name);
+    if Path::new(&dest_path).exists() {
+        return Ok(Response::with((status::BadRequest, "Config with that name already exists")));
+    }
+
+    // TODO: Could do this validation with the temp file shenanigans
+    match validate_config_at(&saved.path) {
+        Ok(()) => {
+            // Instead of a rename, copy then delete the old one (because the uploaded file
+            // is saved to a tmp dir, which is often on a different filesystem, so rename
+            // doesn't work)
+            match fs::copy(&saved.path, dest_path) {
+                Ok(_) => {
+                    let _ = fs::remove_file(&saved.path);
+                    Ok(Response::with((status::Ok, "Upload complete")))
+                },
+                Err(_) => {
+                    Ok(Response::with((status::InternalServerError, "Error publishing")))
+                }
+            }
+
+        },
+        Err(ValidateConfigError::Validation(reason)) =>
+            Ok(Response::with((status::BadRequest,
+                               format!("Invalid config file\n{}", reason)))),
+        Err(ValidateConfigError::Io(_)) => {
+            Ok(Response::with((status::InternalServerError, "Error uploading")))
         }
     }
 }
