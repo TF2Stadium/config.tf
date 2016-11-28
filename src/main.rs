@@ -7,6 +7,7 @@ extern crate dotenv;
 extern crate tempdir;
 extern crate regex;
 extern crate sha1;
+extern crate rusqlite;
 #[macro_use]
 extern crate lazy_static;
 
@@ -27,6 +28,7 @@ use router::Router;
 use dotenv::dotenv;
 use regex::Regex;
 use sha1::Sha1;
+use rusqlite::Connection;
 
 fn sha1(s: &[u8]) -> String {
     let mut digest = Sha1::new();
@@ -175,15 +177,52 @@ fn config_handler(req: &mut Request) -> IronResult<Response> {
     }
 }
 
+static MIGRATIONS: [&'static str; 1] = [
+    include_str!("./migrations/0.sql")
+];
+
+fn db_version(conn: &Connection) -> rusqlite::Result<i64> {
+    let mut cnt_tables_query = try!(conn.prepare("SELECT count(*) FROM sqlite_master"));
+    let mut cnt_tables = try!(cnt_tables_query.query_map(&[], |row| row.get(0)));
+    let cnt_table = cnt_tables.nth(0).unwrap_or(Ok(0)).unwrap();
+
+    if cnt_table > 0 {
+        conn.query_row("SELECT db_version FROM db_version", &[], |row| row.get::<i32, i64>(0))
+    } else {
+        Ok(-1)
+    }
+}
+
+fn run_migration(conn: &Connection, i: usize) -> rusqlite::Result<()> {
+    try!(conn.execute_batch(MIGRATIONS[i]));
+    try!(conn.execute("UPDATE db_version SET db_version=?", &[&(i as i32)]));
+    Ok(())
+}
+
+fn setup_db(conn: &Connection) -> rusqlite::Result<()> {
+    let version = try!(db_version(conn));
+
+    for i in (version + 1)..(MIGRATIONS.len() as i64) {
+        println!("Running DB migration: {}", i);
+        try!(run_migration(conn, i as usize));
+    }
+
+    Ok(())
+}
+
 fn main() {
     dotenv().ok();
+    let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
+    let db_path: String = env::var("SQLITE_DB").unwrap_or("./db.sqlite".to_string());
+
+    let conn = Connection::open(db_path).unwrap();
+    setup_db(&conn).unwrap();
 
     let mut router = Router::new();
     router.get("/", index_handler, "index");
     router.post("/cfg", upload_handler, "upload");
     router.get("/cfg/*config", config_handler, "config");
 
-    let port: u16 = env::var("PORT").unwrap_or("".to_string()).parse().unwrap_or(3000);
     let _server = Iron::new(router).http(("0.0.0.0", port)).unwrap();
     println!("Listening on port {}", port);
 }
